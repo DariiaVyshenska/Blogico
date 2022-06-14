@@ -1,0 +1,14 @@
+<form action="/signin" method='post'>
+  <h3>Admin sign in:</h3>
+  <div>
+    <label for='user_email'>E-mail:
+      <input type='email' name='user_email' id='user_email' value=<%= params[:user_email] %> >
+    </label>
+  </div>
+  <div>
+    <label for='password'>Password:
+      <input type='password' name='password' id='password' >
+    </label>
+  </div>
+  <button type='submit'>Sign in</button>
+</form>

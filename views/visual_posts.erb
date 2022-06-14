@@ -1,0 +1,13 @@
+<% @posts.each do |post| %>
+  <div>
+    <br>
+    <a style="text-decoration:none;color:black" href="/posts/<%= post[:id] %>">
+    <h3><%= post[:header] %></h3>
+      <%== post[:body] %>
+      <p><em>Date: </em> <%= post[:date] %><p>
+    </a>
+    <% unless post[:tags].empty? %>
+      <p><em>Tags: </em> <%=  tags_to_str(post) %><p>
+    <% end %>
+  </div>
+<% end %>

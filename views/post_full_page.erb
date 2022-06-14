@@ -1,0 +1,19 @@
+<div>
+  <h3><%= @post[:header] %></h3>
+</div>
+<div>
+  <%== @post[:body] %>
+</div>
+<div>
+<p><em>Date: </em> <%= @post[:date] %><p>
+<% unless @post[:tags].empty? %>
+  <p><em>Tags: </em> <%=  tags_to_str(@post) %><p>
+<% end %>
+</div>
+
+<% if logged_in? %>
+  <a href="/edit/<%= params[:post_id] %>">Edit Post</a>
+  <br>
+  <br>
+  <form method='post' action='/delete/<%= params[:post_id] %>' class="delete"><button type="submit">Delete Post</button></form>
+<% end %>

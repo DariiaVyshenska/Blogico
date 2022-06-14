@@ -1,0 +1,27 @@
+<h3>Edit post:</h3>
+
+<form action="/new" method="post">
+
+  <b><label for="category">Category: </label></b>
+  <select type="text" id="category" name="category"/>
+    <% @categories.each do |item| %>
+      <option value=<%= item %>><%= item %></option>
+    <% end %>
+  </select>
+  <br>
+  <br>
+  <b><label for="header">Header: </label</b>
+  <input type="text"id="header" name="header" value="<%= params[:header] %>" />
+  <br>
+  <br>
+  <b><label for="page_text">Post text: </label</b>
+  <br>
+  <textarea id="page_text" name="page_text" rows="10" cols="100" ></textarea>
+  <br>
+  <br>
+  <b><label for="tags">Tags: </label></b>
+  <input type="text"id="tags" name="tags" value="<%= params[:tags] %>" />
+  <br>
+  <br>
+  <input type="submit" value="Submit">
+</form>

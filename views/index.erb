@@ -1,0 +1,10 @@
+<div>
+  <h2><%= @about_post[:header] %></h2>
+<div>
+</div>
+  <%== @about_post[:body] %>
+</div>
+
+<% if logged_in? %>
+  <a href="/edit/1">Edit Main Page</a>
+<% end %>
