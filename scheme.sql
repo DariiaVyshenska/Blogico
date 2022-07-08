@@ -83,8 +83,25 @@ CREATE TABLE users(
   admin boolean NOT NULL
 );
 
+CREATE TABLE auth_tokens (
+    id serial PRIMARY KEY,
+    selector char(12),
+    hashedValidator text,
+    user_id INT NOT NULL REFERENCES users(id),
+    expires timestamp
+);
+
 INSERT INTO users (email, password, admin)
 VALUES ('vysh@gmail.com', '$2a$12$Xwqrah.O/GSieHa2bYdRn.maUNR6XcbOH6haFxkcdG2j55wHFAVwe', true);
+
+INSERT INTO auth_tokens (selector, hashedValidator, user_id, expires)
+VALUES ('testselector', '95d5b30858eca1f25cb94c64205522b5034a7ed7d907f5f9fff4fdc6fcaf8870', '1', '2023-07-01 9:30:20');
+
+INSERT INTO auth_tokens (selector, hashedValidator, user_id, expires)
+VALUES ('testselecto2', '95d5b30858eca1f25cb94c64205522b5034a7367d907f5f9fff4fdc6fcaf8870', '1', '2023-07-01 9:30:20');
+
+INSERT INTO auth_tokens (selector, hashedValidator, user_id, expires)
+VALUES ('expiredselec', 'bf434449496b02dd3de8c6b1b3057a0cd2f7f48fca41bafd57b9359dd29d9b31', '1', '2022-05-01 9:30:20');
 
 INSERT INTO webpages (category, header, page_text)
 VALUES

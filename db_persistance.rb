@@ -18,6 +18,7 @@ class DatabasePersistance
     @db.close
   end
 
+  # in the end see if you can reduce result.values.first&.first to be a method
   def get_user_password(email)
     sql = 'SELECT password FROM users WHERE email = $1'
     result = query(sql, email)
@@ -191,7 +192,62 @@ class DatabasePersistance
     result.values.flatten.sort
   end
 
+  def get_user_id_by_email(email)
+    sql = 'SELECT id FROM users WHERE email = $1'
+    result = query(sql, email)
+    result.values.first&.first
+  end
+
+  def find_token(selector)
+    sql = 'SELECT * FROM auth_tokens WHERE selector = $1 AND expires > NOW()'
+    result = query(sql, selector)
+    token = token_to_arr(result)
+    token.empty? ? nil : token.first
+  end
+
+  def user_id_by_token_selector(selector)
+    sql = 'SELECT user_id FROM auth_tokens WHERE selector = $1'
+    result = query(sql, selector)
+    result.values.first&.first
+  end
+
+  def get_user_email(user_id)
+    sql = 'SELECT email FROM users WHERE id = $1'
+    result = query(sql, user_id)
+    result.values.first&.first
+  end
+
+  def delete_all_user_tokens(user_id)
+    sql = 'DELETE FROM auth_tokens WHERE user_id = $1'
+    query(sql, user_id)
+  end
+
+  def new_token(token, user_id, expiration_info)
+    sql = <<~MSG
+      INSERT INTO auth_tokens (selector, hashedValidator, user_id, expires)
+        VALUES ($1, $2, $3, $4)
+    MSG
+    query(sql, token[:selector], token[:validator], user_id, expiration_info)
+  end
+
+  def delete_token(selector)
+    sql = 'DELETE FROM auth_tokens WHERE selector = $1'
+    query(sql, selector)
+  end
+
   private
+
+  def token_to_arr(result)
+    result.map do |tuple|
+      {
+        id: tuple['id'],
+        selector: tuple['selector'],
+        validator: tuple['hashedvalidator'],
+        user_id: tuple['user_id'],
+        expiration: tuple['expires']
+      }
+    end
+  end
 
   def query(statement, *params)
     @logger.info "#{statement}: #{params}"

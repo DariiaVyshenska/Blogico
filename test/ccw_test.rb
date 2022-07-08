@@ -60,6 +60,11 @@ class MahnoTest < Minitest::Test
 
     get last_response['Location']
     assert_includes last_response.body, 'Welcome to my web-site'
+
+    get '/signin'
+    assert_equal 302, last_response.status
+    get last_response['Location']
+    assert_includes last_response.body, 'Hello and Welcome to my web-site!'
   end
 
   def test_invalid_signin
@@ -84,14 +89,182 @@ class MahnoTest < Minitest::Test
     assert_nil session[:email]
   end
 
-  def test_valid_signin
+  def test_valid_signin_no_rm
     post '/signin', user_email: 'vysh@gmail.com', password: '1234'
     assert_equal 302, last_response.status
     assert_equal 'vysh@gmail.com', session[:email]
     assert_equal 'Welcome!', session[:success]
+    assert_nil session[:autolog]
+    assert_nil rack_mock_session.cookie_jar["remember_me_token"]
 
     get '/'
     assert_includes last_response.body, 'Signed in with email: vysh@gmail.com'
+  end
+
+  def test_valid_signin_yes_rm
+    post '/signin', user_email: 'vysh@gmail.com', password: '1234', remember: 'true'
+    assert_equal 302, last_response.status
+    assert_equal 'vysh@gmail.com', session[:email]
+    assert_equal 'Welcome!', session[:success]
+    assert_nil session[:autolog]
+    assert rack_mock_session.cookie_jar["remember_me_token"]
+
+    get '/'
+    assert_includes last_response.body, 'Signed in with email: vysh@gmail.com'
+  end
+
+  def test_autolog_signin
+    rack_mock_session.cookie_jar["remember_me_token"] = 'testselector-test_validator'
+    get '/'
+    assert_equal 200, last_response.status
+    assert_equal 'vysh@gmail.com', session[:email]
+    assert_includes last_response.body, 'Signed in with email: vysh@gmail.com'
+    assert session[:autolog]
+
+    get '/signin'
+    assert_equal 200, last_response.status
+    assert_equal 'text/html;charset=utf-8', last_response['Content-Type']
+    assert_includes last_response.body, "<input type='email' name='user_email' id='user_email' "
+    assert_includes last_response.body, "<input type='password' name='password' id='password' >"
+
+    post '/signin', user_email: 'vysh@gmail.com', password: '1234', remember: 'true'
+
+    refute_equal rack_mock_session.cookie_jar["remember_me_token"], 'testselector-test_validator' ########
+  end
+
+  def test_autolog_get_password_change
+    rack_mock_session.cookie_jar["remember_me_token"] = 'testselector-test_validator'
+
+    # accessing change password pages
+    get '/change_password'
+    assert_equal 'Please, sign in again!', session[:error]
+    get last_response['Location']
+    assert_equal 200, last_response.status
+    assert_equal 'text/html;charset=utf-8', last_response['Content-Type']
+    assert_includes last_response.body, 'Admin sign in:'
+
+    post '/signin', user_email: 'vysh@gmail.com', password: '1234'
+    assert_equal 302, last_response.status
+    get last_response['Location']
+    assert_includes last_response.body, '<h2>Change password.</h2>'
+    assert_includes last_response.body, '<input type="password" name="password" id="password"'
+  end
+
+  def test_autolog_post_password_change
+    rack_mock_session.cookie_jar["remember_me_token"] = 'testselector-test_validator'
+
+    # accessing change password pages
+    post '/change_password'
+    assert_equal 'Please, sign in again!', session[:error]
+    get last_response['Location']
+    assert_equal 200, last_response.status
+    assert_equal 'text/html;charset=utf-8', last_response['Content-Type']
+    assert_includes last_response.body, 'Admin sign in:'
+
+    post '/signin', user_email: 'vysh@gmail.com', password: '1234'
+    assert_equal 302, last_response.status
+    get last_response['Location']
+    assert_includes last_response.body, '<h2>Change password.</h2>'
+    assert_includes last_response.body, '<input type="password" name="password" id="password"'
+  end
+
+  def test_autolog_get_edit_page1
+    rack_mock_session.cookie_jar["remember_me_token"] = 'testselector-test_validator'
+
+    get '/edit/1'
+    assert_equal 'Please, sign in again!', session[:error]
+    get last_response['Location']
+    assert_equal 200, last_response.status
+    assert_equal 'text/html;charset=utf-8', last_response['Content-Type']
+    assert_includes last_response.body, 'Admin sign in:'
+
+    post '/signin', user_email: 'vysh@gmail.com', password: '1234'
+    assert_equal 302, last_response.status
+    get last_response['Location']
+    assert_equal 200, last_response.status
+    assert_equal 'text/html;charset=utf-8', last_response['Content-Type']
+    assert_includes last_response.body,
+                    '<input type="text"id="header" name="header" value="Hello and Welcome to my web-site!"'
+    assert_includes last_response.body, '<img style="float:left; padding-right:25px" '
+    assert_includes last_response.body, '<option value=about>about</option>'
+  end
+
+  def test_autolog_get_edit_page_other
+    rack_mock_session.cookie_jar["remember_me_token"] = 'testselector-test_validator'
+
+    get '/edit/4'
+    assert_equal 'Please, sign in again!', session[:error]
+    get last_response['Location']
+    assert_equal 200, last_response.status
+    assert_equal 'text/html;charset=utf-8', last_response['Content-Type']       #******
+    assert_includes last_response.body, 'Admin sign in:'
+
+    post '/signin', user_email: 'vysh@gmail.com', password: '1234'
+    assert_equal 302, last_response.status
+    get last_response['Location']
+    assert_equal 200, last_response.status
+    assert_equal 'text/html;charset=utf-8', last_response['Content-Type']
+    assert_includes last_response.body, 'This is my first post'
+    assert_includes last_response.body, 'Edit post:'
+  end
+
+  def test_autolog_delete_page
+    rack_mock_session.cookie_jar["remember_me_token"] = 'testselector-test_validator'
+
+    post '/delete/4'
+    assert_equal 'Please, sign in again!', session[:error]
+    get last_response['Location']
+    assert_equal 200, last_response.status
+    assert_equal 'text/html;charset=utf-8', last_response['Content-Type']
+    assert_includes last_response.body, 'Admin sign in:'
+
+    post '/signin', user_email: 'vysh@gmail.com', password: '1234'
+    assert_equal 302, last_response.status
+    get last_response['Location']
+    assert_equal 200, last_response.status
+    assert_equal 'text/html;charset=utf-8', last_response['Content-Type']
+    assert_includes last_response.body, 'This is my first post'
+    assert_includes last_response.body, %q(action='/delete/4')
+  end
+
+  def test_expired_rm_cookie
+    rack_mock_session.cookie_jar["remember_me_token"] = 'expiredselec-expiredvalidator'
+
+    get '/'
+    assert_equal 200, last_response.status
+    assert_nil session[:email]
+    refute_includes last_response.body, 'Signed in with email: vysh@gmail.com'
+    assert_nil session[:autolog]
+  end
+
+  def test_wrong_rm_cookie
+    rack_mock_session.cookie_jar["remember_me_token"] = 'testselec12345-test_validator'
+
+    get '/'
+    assert_equal 200, last_response.status
+    assert_nil session[:email]
+    refute_includes last_response.body, 'Signed in with email: vysh@gmail.com'
+    assert_nil session[:autolog]
+  end
+
+  def test_stolen_rm_cookie
+    rack_mock_session.cookie_jar["remember_me_token"] = 'testselector-wrongvalidator'
+
+    get '/'
+    assert_equal 302, last_response.status
+    assert_nil session[:email]
+    assert_nil session[:autolog]
+    assert_equal session[:error], 'You are being a very bad person! This user is now logged out from all devices and the attemted theft is reported to the user!'
+
+    get last_response['Location']
+    refute_includes last_response.body, 'Signed in with email: vysh@gmail.com'
+
+    rack_mock_session.cookie_jar["remember_me_token"] = 'testselector-test_validator'
+    get '/'
+    assert_equal 200, last_response.status
+    assert_nil session[:email]
+    refute_includes last_response.body, 'Signed in with email: vysh@gmail.com'
+    assert_nil session[:autolog]
   end
 
   def test_signout
@@ -371,6 +544,11 @@ class MahnoTest < Minitest::Test
     assert_equal 422, last_response.status
     assert_includes last_response.body, 'The password must be 4 or more characters.'
 
+  end
+
+  def test_valid_change_pass_no_rm
+    # login
+    post '/signin', user_email: 'vysh@gmail.com', password: '1234'
     # change password succesfully
     post '/change_password', password: '1234', password1: '12345', password2: '12345'
     assert_equal 302, last_response.status
@@ -380,12 +558,65 @@ class MahnoTest < Minitest::Test
     assert_equal 200, last_response.status
     assert_equal 'text/html;charset=utf-8', last_response['Content-Type']
     assert_includes last_response.body, 'My name is Dariia'
+    assert_equal 'vysh@gmail.com', session[:email]
+    assert_nil session[:autolog]
+    assert_nil rack_mock_session.cookie_jar["remember_me_token"]
 
     # logout
     post '/signout'
     assert_equal 302, last_response.status
     assert_nil session[:email]
     assert_equal 'You have been signed out.', session[:success]
+
+    # try signing in with old valid remember me cookie (should not work)
+    rack_mock_session.cookie_jar["remember_me_token"] = 'testselector-test_validator'
+    get '/'
+    assert_equal 200, last_response.status
+    assert_nil session[:email]
+    refute_includes last_response.body, 'Signed in with email: vysh@gmail.com'
+    assert_nil session[:autolog]
+
+    # login with new Credentials
+    post '/signin', user_email: 'vysh@gmail.com', password: '12345'
+    assert_equal 302, last_response.status
+    assert_equal 'vysh@gmail.com', session[:email]
+    assert_equal 'Welcome!', session[:success]
+  end
+
+  def test_valid_change_pass_rm
+    # login
+    post '/signin', user_email: 'vysh@gmail.com', password: '1234', remember: 'true'
+    old_rm_cookie = rack_mock_session.cookie_jar["remember_me_token"]
+
+    # change password succesfully
+    post '/change_password', password: '1234', password1: '12345', password2: '12345'
+    assert_equal 302, last_response.status
+    assert_equal "You've successfully changed your password!", session[:success]
+    assert rack_mock_session.cookie_jar["remember_me_token"]
+    refute_equal old_rm_cookie, rack_mock_session.cookie_jar["remember_me_token"]
+
+
+    get last_response['Location']
+    assert_equal 200, last_response.status
+    assert_equal 'text/html;charset=utf-8', last_response['Content-Type']
+    assert_includes last_response.body, 'My name is Dariia'
+    assert_equal 'vysh@gmail.com', session[:email]
+    assert_nil session[:autolog]
+
+
+    # logout
+    post '/signout'
+    assert_equal 302, last_response.status
+    assert_nil session[:email]
+    assert_equal 'You have been signed out.', session[:success]
+
+    # try signing in with old valid remember me cookie (should not work)
+    rack_mock_session.cookie_jar["remember_me_token"] = 'testselector-test_validator'
+    get '/'
+    assert_equal 200, last_response.status
+    assert_nil session[:email]
+    refute_includes last_response.body, 'Signed in with email: vysh@gmail.com'
+    assert_nil session[:autolog]
 
     # login with new Credentials
     post '/signin', user_email: 'vysh@gmail.com', password: '12345'

@@ -11,3 +11,7 @@ gem "bcrypt"
 gem "sanitize"
 gem "sysrandom"
 gem "pg"
+gem "rack-protection"
+gem 'webrick'
+gem 'securerandom'
+gem 'digest'

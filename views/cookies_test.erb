@@ -1,0 +1,26 @@
+<br>
+<b>"output:"</b>
+<br>
+<%= @tmp.inspect %>
+<br>
+<br>
+<br>
+<b>"second tmp:"</b>
+<br>
+<%= @tmp2 %>
+<br>
+<br>
+<br>
+<b>"test variable:"</b>
+<br>
+<%= session[:test].inspect %>
+<br>
+<br>
+<br>
+<form action="/tmp2" method='get'>
+  <h3>fake signin:</h3>
+  <button type='submit'>Sign in</button>
+</form>
+
+look here
+<%= request.cookies["remember_me_token"] %>

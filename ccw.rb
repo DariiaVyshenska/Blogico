@@ -3,10 +3,11 @@
 require 'sinatra'
 require 'sinatra/reloader'
 require 'tilt/erubis'
-require 'yaml'
 require 'bcrypt'
 require 'sanitize'
-require 'sysrandom/securerandom'
+require 'sinatra/cookies'
+require 'securerandom'
+require 'digest'
 
 require_relative 'db_persistance'
 
@@ -21,7 +22,6 @@ POSTS_PER_PAGE = if Sinatra::Base.production?
 
 configure do
   enable :sessions
-  set :sessions, expire_after: 60 * 60 * 24 * 7 # in seconds
   set :session_secret, ENV.fetch('SESSION_SECRET') { SecureRandom.hex(64) }
   set :erb, escape_html: true
 end
@@ -45,7 +45,10 @@ helpers do
   end
 
   def post_body_preview(post)
-    first_sanitized_el(post.split("\n\n"))
+    post.split("\n\n").each do |el|
+      clean_el = Sanitize.fragment(el).strip
+      return clean_el unless clean_el.empty?
+    end
   end
 
   def tags_to_str(post)
@@ -57,13 +60,6 @@ not_found do
   page_does_not_exist
 end
 
-def first_sanitized_el(text_arr)
-  text_arr.each do |el|
-    clean_el = Sanitize.fragment(el).strip
-    return clean_el unless clean_el.empty?
-  end
-end
-
 def redirect_if_logout
   return if logged_in?
 
@@ -72,7 +68,7 @@ def redirect_if_logout
 end
 
 def redirect_if_loggedin
-  redirect '/' if logged_in?
+  redirect '/' if logged_in? && !auto_logged_in?
 end
 
 def error_valid_credentials(email, pwd)
@@ -82,20 +78,13 @@ def error_valid_credentials(email, pwd)
 end
 
 def login
-  session[:email] = params[:user_email].strip
+  session.delete(:autolog)
+  session[:email] = params[:user_email]
+  handle_rememberme_feature
 end
 
-def encrypt_password(pwd_str)
-  BCrypt::Password.create(pwd_str).to_s
-end
-
-def posts_for_page(post_type, page_id, tag_id = nil)
-  offset = POSTS_PER_PAGE * page_id
-  if tag_id
-    @storage.posts_by_tag(post_type, tag_id, POSTS_PER_PAGE, offset)
-  else
-    @storage.posts(post_type, POSTS_PER_PAGE, offset)
-  end
+def encrypt_password(pwd)
+  BCrypt::Password.create(pwd).to_s
 end
 
 def page_data
@@ -119,16 +108,25 @@ end
 def page_data_by_pagetype_and_tag
   redirect_if_tag_does_not_exist
 
-  set_max_page_num(params[:tag_id])
+  set_max_page_num
   redirect_if_page_num_not_in_range
 
   @posts = posts_for_page(params[:section], @page_id, params[:tag_id])
 end
 
-def set_max_page_num(tag_id = nil)
-  max_post_num = @storage.ntuple_posts(params[:section], tag_id)
-  @max_page_num = (max_post_num.to_f / POSTS_PER_PAGE).ceil
-  @max_page_num = @max_page_num.zero? ? 1 : @max_page_num
+def posts_for_page(post_type, page_id, tag_id = nil)
+  offset = POSTS_PER_PAGE * page_id
+  if tag_id
+    @storage.posts_by_tag(post_type, tag_id, POSTS_PER_PAGE, offset)
+  else
+    @storage.posts(post_type, POSTS_PER_PAGE, offset)
+  end
+end
+
+def set_max_page_num
+  max_post_num = @storage.ntuple_posts(params[:section], params[:tag_id])
+  max_page_num = (max_post_num.to_f / POSTS_PER_PAGE).ceil
+  @max_page_num = max_page_num.zero? ? 1 : max_page_num
 end
 
 def redirect_if_page_num_not_in_range
@@ -136,11 +134,11 @@ def redirect_if_page_num_not_in_range
 end
 
 def redirect_if_tag_does_not_exist
-  page_does_not_exist unless @tags_info.any? { |tag| tag[:id].to_s == params[:tag_id] }
+  page_does_not_exist unless @tags_info.any? { |tag| tag[:id] == params[:tag_id] }
 end
 
 def redirect_if_post_not_exist
-  page_does_not_exist unless valid_post_id(params[:post_id])
+  page_does_not_exist unless valid_post_id?(params[:post_id])
 end
 
 def page_does_not_exist
@@ -148,7 +146,7 @@ def page_does_not_exist
   redirect '/'
 end
 
-def valid_post_id(post_id)
+def valid_post_id?(post_id)
   (post_id !~ /\D/) && @storage.post_exists?(post_id)
 end
 
@@ -169,45 +167,123 @@ end
 def tags_to_arr
   params[:tags].to_s.strip.split(', ').sort
 end
+
+def auto_logged_in?
+  session[:autolog]
+end
+
+def generate_token
+  sel_n = 12
+  val_n = 64
+  { selector: SecureRandom.alphanumeric(sel_n),
+    validator: SecureRandom.alphanumeric(val_n) }
+end
+
+def encode_token(token)
+  { selector: token[:selector],
+    validator: Digest::SHA256.hexdigest(token[:validator]) }
+end
+
+# get '/tmp' do
+#   @tmp = generate_token
+#   # @tmp2 = @tmp[:validator]
+#   @tmp2 = encode_token(@tmp)  #Digest::SHA256.hexdigest(@tmp[:validator])#encode_token(@tmp)
+#
+#   erb :cookies_test, layout: :layout
+# end
+
+def parse_token_str(token_str)
+  token_arr = token_str.split('-')
+  { selector: token_arr[0], validator: token_arr[1] }
+end
+
+def token_valid?(received_token, stored_token)
+  encode_token(received_token)[:validator] == stored_token[:validator]
+end
+
+def autologin_if_remembered_user
+  autologin if remembered_user?
+end
+
+def autologin
+  return if session[:email]
+
+  selector = parse_token_str(cookies['remember_me_token'])[:selector]
+  user_id = @storage.user_id_by_token_selector(selector)
+  session[:email] = @storage.get_user_email(user_id)
+  session[:autolog] = true
+end
+
+def remembered_user?
+  return false unless request.cookies['remember_me_token']
+
+  token = parse_token_str(request.cookies['remember_me_token'])
+  db_token = @storage.find_token(token[:selector]) # should I delete this cookie if this does not stand?
+  return false unless db_token
+
+  return true if token_valid?(token, db_token)
+
+  cookie_theft!(token)
+end
+
+def cookie_theft!(token)
+  error_msg =
+    'You are being a very bad person! This user is now logged out from all ' \
+    'devices and the attemted theft is reported to the user!'
+
+  session[:error] = error_msg
+  user_id = @storage.user_id_by_token_selector(token[:selector])
+  @storage.delete_all_user_tokens(user_id)
+  redirect '/'
+end
+
+def set_remember_me_cookie
+  rm_token = generate_token
+  expiration_info = Time.now + (60 * 60 * 24 * 30)
+  user_id = @storage.get_user_id_by_email(session[:email])
+  response.set_cookie('remember_me_token', {
+                        value: rm_token.values.join('-'),
+                        expires: expiration_info
+                      })
+  @storage.new_token(encode_token(rm_token), user_id, expiration_info)
+end
+
+def force_resignin_if_autolog(redirect_back_path = nil)
+  return unless session[:autolog]
+
+  session[:redirect_location] = redirect_back_path
+  session[:error] = 'Please, sign in again!'
+  redirect '/signin'
+end
+
+def delete_remember_me_cookie
+  token = parse_token_str(cookies['remember_me_token'])
+  @storage.delete_token(token[:selector])
+  cookies.delete('remember_me_token')
+end
+
+def handle_rememberme_feature
+  delete_remember_me_cookie if request.cookies['remember_me_token']
+  set_remember_me_cookie if params[:remember] == 'true'
+end
+
+def logout
+  session.delete(:email)
+  session.delete(:autolog)
+  delete_remember_me_cookie if request.cookies['remember_me_token']
+end
 #============================= MAIN ============================================
-
-# main page
-get '/' do
-  @about_post = @storage.about_page
-
-  erb :index, layout: :layout
-end
-
-# visual post umbrella-page
-get '/visualart/?' do
-  erb :visualart, layout: :layout
-end
-
-# generic post page
-get '/posts/:post_id/?' do
-  redirect_if_post_not_exist
-
-  @post = @storage.post(params[:post_id])
-  erb :post_full_page, layout: :layout
-end
-
-# find on the web-site
-get '/search' do
-  query = params[:query].to_s.strip
-  @results = @storage.find_posts(query).reject { |p| p[:category] == 'about' }
-
-  erb :search_results, layout: :layout
-end
-
 # admin related features
 # signin
 get '/signin' do
+  autologin_if_remembered_user
   redirect_if_loggedin
 
   erb :signin, layout: :layout
 end
 
 post '/signin' do
+  autologin_if_remembered_user
   redirect_if_loggedin
 
   error = error_valid_credentials(params[:user_email], params[:password])
@@ -218,28 +294,33 @@ post '/signin' do
   else
     login
     session[:success] = 'Welcome!'
-    redirect '/'
+    redirect session.delete(:redirect_location) || '/'
   end
 end
 
 # signout
 post '/signout' do
+  autologin_if_remembered_user
   redirect_if_logout
 
-  session.delete(:email)
+  logout
   session[:success] = 'You have been signed out.'
   redirect '/'
 end
 
 # password change
 get '/change_password' do
+  autologin_if_remembered_user
   redirect_if_logout
+  force_resignin_if_autolog(request.path_info)
 
   erb :pwd_change, layout: :layout
 end
 
 post '/change_password' do
+  autologin_if_remembered_user
   redirect_if_logout
+  force_resignin_if_autolog(request.path_info)
 
   new_pw1 = params[:password1]
   new_pw2 = params[:password2]
@@ -251,14 +332,18 @@ post '/change_password' do
     session[:error] = error
     erb :pwd_change, layout: :layout
   else
-    session[:success] = "You've successfully changed your password!"
+    user_id = @storage.get_user_id_by_email(session[:email])
+    @storage.delete_all_user_tokens(user_id)
+    set_remember_me_cookie if request.cookies['remember_me_token']
     @storage.change_user_password(session[:email], encrypt_password(new_pw1))
+    session[:success] = "You've successfully changed your password!"
     redirect '/'
   end
 end
 
 # create new post
 get '/new' do
+  autologin_if_remembered_user
   redirect_if_logout
 
   @categories = categories_for_users
@@ -266,6 +351,7 @@ get '/new' do
 end
 
 post '/new' do
+  autologin_if_remembered_user
   redirect_if_logout
 
   category = params[:category]
@@ -283,7 +369,9 @@ end
 
 # edit existing post
 get '/edit/1' do
+  autologin_if_remembered_user
   redirect_if_logout
+  force_resignin_if_autolog(request.path_info)
 
   @post = @storage.post_unrendered(1)
   @categories = [@post[:category]]
@@ -292,7 +380,9 @@ get '/edit/1' do
 end
 
 get '/edit/:post_id' do
+  autologin_if_remembered_user
   redirect_if_logout
+  force_resignin_if_autolog(request.path_info)
   redirect_if_post_not_exist
 
   @post = @storage.post_unrendered(params[:post_id])
@@ -302,7 +392,9 @@ get '/edit/:post_id' do
 end
 
 post '/edit/:post_id' do
+  autologin_if_remembered_user
   redirect_if_logout
+  force_resignin_if_autolog(request.path_info)
   redirect_if_post_not_exist
 
   new_category = params[:category]
@@ -326,7 +418,9 @@ end
 
 # delete existing post
 post '/delete/:post_id' do
+  autologin_if_remembered_user
   redirect_if_logout
+  force_resignin_if_autolog("/posts/#{params[:post_id]}")
   redirect_if_post_not_exist
 
   @storage.delete_post(params[:post_id])
@@ -335,11 +429,45 @@ post '/delete/:post_id' do
 end
 
 # public pages
+# index page
+get '/' do
+  autologin_if_remembered_user
+  @about_post = @storage.about_page
+
+  erb :index, layout: :layout
+end
+
+# visual post umbrella-page
+get '/visualart/?' do
+  autologin_if_remembered_user
+  erb :visualart, layout: :layout
+end
+
+# generic post page
+get '/posts/:post_id/?' do
+  autologin_if_remembered_user
+  redirect_if_post_not_exist
+
+  @post = @storage.post(params[:post_id])
+  erb :post_full_page, layout: :layout
+end
+
+# find on the web-site
+get '/search' do
+  autologin_if_remembered_user
+  query = params[:query].to_s.strip
+  @results = @storage.find_posts(query).reject { |p| p[:category] == 'about' }
+
+  erb :search_results, layout: :layout
+end
+
 # existing sections pages
 ['/:section/tags/:tag_id/:page_id',
  '/:section/:page_id',
  '/:section/?'].each do |path|
   get path do
+    autologin_if_remembered_user
+
     if VISUAL_SECTIONS.include?(params[:section])
       page_data
       erb :posts_feed_layout, locals: { section: params[:section] }, layout: :layout do
