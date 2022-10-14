@@ -4,12 +4,14 @@ require 'pg'
 require 'redcarpet'
 
 # this class is an interface for interacting with PSQL database for the CCW App
+# rubocop:disable Metrics/MethodLength
+# rubocop:disable Metrics/ClassLength
 class DatabasePersistance
   def initialize(logger)
     @db = if Sinatra::Base.production?
             PG.connect(ENV['DATABASE_URL'])
           else
-            PG.connect(dbname: 'mywebsite')
+            @db = connect_db('mywebsite')
           end
     @logger = logger
   end
@@ -18,7 +20,6 @@ class DatabasePersistance
     @db.close
   end
 
-  # in the end see if you can reduce result.values.first&.first to be a method
   def get_user_password(email)
     sql = 'SELECT password FROM users WHERE email = $1'
     result = query(sql, email)
@@ -249,6 +250,18 @@ class DatabasePersistance
     end
   end
 
+  def connect_db(name)
+    PG.connect(dbname: name)
+  rescue PG::ConnectionBad
+    import_db(name)
+    PG.connect(dbname: name)
+  end
+
+  def import_db(name)
+    system("createdb #{name}")
+    system("psql -d #{name} < schema.sql")
+  end
+
   def query(statement, *params)
     @logger.info "#{statement}: #{params}"
     @db.exec_params(statement, params)
@@ -326,3 +339,5 @@ class DatabasePersistance
     end
   end
 end
+# rubocop:enable Metrics/MethodLength
+# rubocop: enable Metrics/ClassLength

@@ -184,14 +184,6 @@ def encode_token(token)
     validator: Digest::SHA256.hexdigest(token[:validator]) }
 end
 
-# get '/tmp' do
-#   @tmp = generate_token
-#   # @tmp2 = @tmp[:validator]
-#   @tmp2 = encode_token(@tmp)  #Digest::SHA256.hexdigest(@tmp[:validator])#encode_token(@tmp)
-#
-#   erb :cookies_test, layout: :layout
-# end
-
 def parse_token_str(token_str)
   token_arr = token_str.split('-')
   { selector: token_arr[0], validator: token_arr[1] }
